@@ -10,16 +10,8 @@ pub fn run() {
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
 
-            // 动态计算刘海位置
-            // 先获取所有可用显示器，找主显示器（position.x >= 0 且最小）
+            // 获取主显示器
             let monitors = app.available_monitors()?;
-            eprintln!("DEBUG: found {} monitors", monitors.len());
-            for (i, m) in monitors.iter().enumerate() {
-                eprintln!("DEBUG: monitor {}: position={:?}, size={:?}, scale={}",
-                    i, m.position(), m.size(), m.scale_factor());
-            }
-
-            // 主显示器通常是 position 最小的那个（或者 x=0 的）
             let primary_monitor = monitors.iter()
                 .find(|m| m.position().x >= 0 && m.position().y >= 0)
                 .or_else(|| monitors.iter().min_by_key(|m| m.position().x + m.position().y));
@@ -27,22 +19,18 @@ pub fn run() {
             if let Some(monitor) = primary_monitor {
                 let monitor_size = monitor.size();
                 let monitor_scale = monitor.scale_factor();
+                // logical 屏幕宽度
+                let screen_width = monitor_size.width as f64 / monitor_scale;
 
-                eprintln!("DEBUG: selected monitor: size={:?}, scale={}", monitor_size, monitor_scale);
+                // 基础胶囊宽度 185px，居中于刘海
+                // 根据实测调整比例，让胶囊中心对齐刘海中心
+                let notch_center_ratio = 0.522;
+                let notch_center_x = screen_width * notch_center_ratio;
+                let pill_width = 185.0;
+                let x = (notch_center_x - pill_width / 2.0) as i32;
 
-                // 刘海中心约在 x=785 logical
-                // 胶囊宽度 120px，左边缘 = 785 - 60 = 725
-                let target_x_logical = 725;
-                let window_x_physical = (target_x_logical as f64 * monitor_scale) as i32;
-
-                // 垂直位置：让窗口顶部对齐刘海上边缘（y=0），被刘海挡住也可以
-                let window_y_physical = 0;
-
-                eprintln!("DEBUG: window position: x={}, y={}", window_x_physical, window_y_physical);
-                window.set_position(PhysicalPosition::new(window_x_physical, window_y_physical))?;
-            } else {
-                eprintln!("DEBUG: no monitor found, using fallback");
-                window.set_position(PhysicalPosition::new(1450, 0))?;
+                eprintln!("DEBUG: screen_width={}, pill_width={}, x={}", screen_width, pill_width, x);
+                window.set_position(PhysicalPosition::new(x * monitor_scale as i32, 0))?;
             }
 
             window.set_focus()?;
@@ -51,13 +39,29 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             core::get_running_tasks,
             core::get_task_count,
-            set_window_size
+            set_window_size_and_center
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 
 #[tauri::command]
-fn set_window_size(window: tauri::Window, width: f64, height: f64) -> Result<(), String> {
-    window.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())
+fn set_window_size_and_center(window: tauri::Window, width: f64, height: f64) -> Result<(), String> {
+    // 设置窗口大小
+    window.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
+
+    // 重新计算居中位置（基于刘海中心比例）
+    if let Some(monitor) = window.current_monitor().map_err(|e| e.to_string())? {
+        let monitor_size = monitor.size();
+        let monitor_scale = monitor.scale_factor();
+        let screen_width = monitor_size.width as f64 / monitor_scale;
+
+        let notch_center_ratio = 0.522;
+        let notch_center_x = screen_width * notch_center_ratio;
+        let x = (notch_center_x - width / 2.0) as i32;
+        window.set_position(PhysicalPosition::new(x * monitor_scale as i32, 0))
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
 }

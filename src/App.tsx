@@ -16,23 +16,23 @@ function App() {
   const prevStatusRef = useRef(status)
 
   useEffect(() => {
-    // 当状态变化时，调整窗口大小
-    const adjustWindowSize = async () => {
+    // 当状态变化时，调整窗口大小并居中
+    const adjustWindow = async () => {
       try {
         if (isExpanded) {
-          await invoke('set_window_size', { width: 280, height: 300 })
-        } else if (status === 'running' && prevStatusRef.current !== 'running') {
-          await invoke('set_window_size', { width: 240, height: 56 })
-        } else if (status === 'idle' && prevStatusRef.current !== 'idle') {
-          await invoke('set_window_size', { width: 120, height: 50 })
+          await invoke('set_window_size_and_center', { width: 280, height: 120 })
+        } else if (status === 'running') {
+          await invoke('set_window_size_and_center', { width: 240, height: 37 })
+        } else {
+          await invoke('set_window_size_and_center', { width: 185, height: 37 })
         }
         prevStatusRef.current = status
       } catch (e) {
-        console.error('Failed to adjust window size:', e)
+        console.error('Failed to adjust window:', e)
       }
     }
 
-    adjustWindowSize()
+    adjustWindow()
   }, [status, isExpanded])
 
   useEffect(() => {
@@ -56,14 +56,8 @@ function App() {
   }
 
   return (
-    <div className={`pill ${status} ${isExpanded ? 'expanded' : ''}`}>
-      <div className="ocean">
-        <div className="waves" />
-        <div className="whale-container">
-          <img src="/whale.png" alt="whale" className="whale" />
-        </div>
-      </div>
-      <div className="pill-content" onClick={toggleExpand}>
+    <div className={`pill ${status} ${isExpanded ? 'expanded' : ''}`} onClick={toggleExpand}>
+      <div className="pill-content">
         {status === 'idle' && (
           <div className="idle-state">
             <span className="text">PillArk</span>

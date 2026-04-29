@@ -12,8 +12,8 @@
     "windows": [
       {
         "title": "PillArk",
-        "width": 120,
-        "height": 60,
+        "width": 185,
+        "height": 37,
         "resizable": false,
         "decorations": false,
         "transparent": true,
@@ -21,7 +21,7 @@
         "visible": true,
         "skipTaskbar": true,
         "center": false,
-        "y": 25
+        "y": 0
       }
     ],
     "security": {
