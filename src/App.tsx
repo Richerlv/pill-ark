@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import './styles.css'
 
@@ -13,6 +13,27 @@ function App() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [isExpanded, setIsExpanded] = useState(false)
   const [status, setStatus] = useState<'idle' | 'running' | 'success' | 'failed'>('idle')
+  const prevStatusRef = useRef(status)
+
+  useEffect(() => {
+    // 当状态变化时，调整窗口大小
+    const adjustWindowSize = async () => {
+      try {
+        if (isExpanded) {
+          await invoke('set_window_size', { width: 280, height: 300 })
+        } else if (status === 'running' && prevStatusRef.current !== 'running') {
+          await invoke('set_window_size', { width: 240, height: 56 })
+        } else if (status === 'idle' && prevStatusRef.current !== 'idle') {
+          await invoke('set_window_size', { width: 120, height: 50 })
+        }
+        prevStatusRef.current = status
+      } catch (e) {
+        console.error('Failed to adjust window size:', e)
+      }
+    }
+
+    adjustWindowSize()
+  }, [status, isExpanded])
 
   useEffect(() => {
     const fetchTasks = async () => {
