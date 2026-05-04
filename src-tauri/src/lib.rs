@@ -1,4 +1,4 @@
-use tauri::{Manager, LogicalSize, PhysicalPosition};
+use tauri::Manager;
 use objc2_app_kit::NSScreen;
 use objc2::MainThreadMarker;
 
@@ -12,38 +12,39 @@ pub fn run() {
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
 
-            // 在 macOS 上使用安全区域定位
+            // 在 macOS 上使用物理屏幕定位
             #[cfg(target_os = "macos")]
             {
-                use objc2_app_kit::NSWindow;
+                use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
+                use objc2_foundation::{NSPoint, NSSize, NSRect};
 
                 if let Ok(ns_window_ptr) = window.ns_window() {
                     unsafe {
-                        let _ns_window: &NSWindow = &*(ns_window_ptr as *const NSWindow);
+                        let ns_window: &NSWindow = &*(ns_window_ptr as *const NSWindow);
 
-                        // 使用主屏幕（带菜单栏的屏幕），而不是窗口当前所在的屏幕
+                        // 使用主屏幕（带菜单栏的屏幕）
                         let mtm = MainThreadMarker::new().expect("Not on main thread");
                         let screen = NSScreen::mainScreen(mtm).expect("No main screen");
-
-                        let auxiliary_top_left = screen.auxiliaryTopLeftArea();
-                        let auxiliary_top_right = screen.auxiliaryTopRightArea();
                         let screen_frame = screen.frame();
 
                         let window_width: f64 = 185.0;
                         let window_height: f64 = 37.0;
 
-                        // X：使用 native API 计算刘海中心对齐
-                        let aux_left_width = auxiliary_top_left.size.width;
-                        let aux_right_width = auxiliary_top_right.size.width;
-                        let screen_width = screen_frame.size.width;
-                        let x_pos = aux_left_width + (screen_width - aux_left_width - aux_right_width - window_width) / 2.0;
+                        // 使用完整屏幕宽度居中（不使用 safe area）
+                        let x_pos = screen_frame.origin.x + (screen_frame.size.width - window_width) / 2.0;
+                        // Y坐标：屏幕物理最顶端
+                        let y_pos = screen_frame.origin.y + screen_frame.size.height - window_height;
 
-                        // Y：窗口顶部在屏幕的最上方（macOS 坐标原点是左下角）
-                        let y_pos = screen_frame.size.height - window_height;
+                        // 设置窗口层级和行为，允许覆盖刘海区域
+                        // NSWindowLevel::StatusBar = 25，菜单栏的级别
+                        ns_window.setLevel(25);
+                        ns_window.setCollectionBehavior(NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::Stationary | NSWindowCollectionBehavior::IgnoresCycle);
 
-                        // 使用 Tauri 设置位置
-                        let _ = window.set_position(PhysicalPosition::new(x_pos as i32, y_pos as i32));
-                        let _ = window.set_size(LogicalSize::new(window_width, window_height));
+                        let new_frame = NSRect::new(
+                            NSPoint::new(x_pos, y_pos),
+                            NSSize::new(window_width, window_height)
+                        );
+                        ns_window.setFrame_display(new_frame, true);
                     }
                 }
             }
@@ -65,11 +66,9 @@ pub fn run() {
 
 #[tauri::command]
 fn set_window_size_and_center(window: tauri::Window, width: f64, height: f64) -> Result<(), String> {
-    window.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
-
     #[cfg(target_os = "macos")]
     {
-        use objc2_app_kit::NSWindow;
+        use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
         use objc2_foundation::{NSPoint, NSSize, NSRect};
 
         if let Ok(ns_window_ptr) = window.ns_window() {
@@ -80,14 +79,15 @@ fn set_window_size_and_center(window: tauri::Window, width: f64, height: f64) ->
                 let screen = NSScreen::mainScreen(mtm).expect("No main screen");
                 let screen_frame = screen.frame();
 
-                let y_pos = screen_frame.size.height - height;
+                // 使用完整屏幕宽度居中（不使用 safe area）
+                let x_pos = screen_frame.origin.x + (screen_frame.size.width - width) / 2.0;
+                // Y坐标：屏幕物理最顶端
+                let y_pos = screen_frame.origin.y + screen_frame.size.height - height;
 
-                let auxiliary_top_left = screen.auxiliaryTopLeftArea();
-                let auxiliary_top_right = screen.auxiliaryTopRightArea();
-                let aux_left_width = auxiliary_top_left.size.width;
-                let aux_right_width = auxiliary_top_right.size.width;
-                let screen_width = screen_frame.size.width;
-                let x_pos = aux_left_width + (screen_width - aux_left_width - aux_right_width - width) / 2.0;
+                // 设置窗口层级和行为，允许覆盖刘海区域
+                // NSWindowLevel::StatusBar = 25，菜单栏的级别
+                ns_window.setLevel(25);
+                ns_window.setCollectionBehavior(NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::Stationary | NSWindowCollectionBehavior::IgnoresCycle);
 
                 let new_frame = NSRect::new(
                     NSPoint::new(x_pos, y_pos),
@@ -96,6 +96,11 @@ fn set_window_size_and_center(window: tauri::Window, width: f64, height: f64) ->
                 ns_window.setFrame_display(new_frame, true);
             }
         }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        window.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
     }
 
     Ok(())
