@@ -1,4 +1,6 @@
 use tauri::{Manager, LogicalSize, PhysicalPosition};
+use objc2_app_kit::NSScreen;
+use objc2::MainThreadMarker;
 
 mod core;
 mod ports;
@@ -10,55 +12,44 @@ pub fn run() {
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
 
-            // 获取主显示器
-            let monitors = app.available_monitors()?;
-            let primary_monitor = monitors.iter()
-                .find(|m| m.position().x >= 0 && m.position().y >= 0)
-                .or_else(|| monitors.iter().min_by_key(|m| m.position().x + m.position().y));
-
-            if let Some(monitor) = primary_monitor {
-                let monitor_size = monitor.size();
-                let monitor_scale = monitor.scale_factor();
-                let screen_width = monitor_size.width as f64 / monitor_scale;
-
-                // 基础胶囊宽度 185px，居中于刘海
-                let notch_center_ratio = 0.522;
-                let notch_center_x = screen_width * notch_center_ratio;
-                let pill_width = 185.0;
-                let x = (notch_center_x - pill_width / 2.0) as i32;
-
-                eprintln!("DEBUG: screen_width={}, x={}", screen_width, x);
-                window.set_position(PhysicalPosition::new(x * monitor_scale as i32, 0))?;
-            }
-
-            // 忽略点击事件，让刘海区域可穿透
-            window.set_ignore_cursor_events(true)?;
-
-            // 在 macOS 上设置窗口属性
+            // 在 macOS 上使用安全区域定位
             #[cfg(target_os = "macos")]
             {
-                use objc2_app_kit::{NSWindow, NSWindowStyleMask, NSWindowCollectionBehavior};
+                use objc2_app_kit::NSWindow;
 
                 if let Ok(ns_window_ptr) = window.ns_window() {
                     unsafe {
-                        let ns_window: &NSWindow = &*(ns_window_ptr as *const NSWindow);
+                        let _ns_window: &NSWindow = &*(ns_window_ptr as *const NSWindow);
 
-                        // 设置 collectionBehavior
-                        let behaviors = NSWindowCollectionBehavior(0x1 | 0x100 | 0x4);
-                        ns_window.setCollectionBehavior(behaviors);
+                        // 使用主屏幕（带菜单栏的屏幕），而不是窗口当前所在的屏幕
+                        let mtm = MainThreadMarker::new().expect("Not on main thread");
+                        let screen = NSScreen::mainScreen(mtm).expect("No main screen");
 
-                        // 设置 level
-                        ns_window.setLevel(25isize);
+                        let auxiliary_top_left = screen.auxiliaryTopLeftArea();
+                        let auxiliary_top_right = screen.auxiliaryTopRightArea();
+                        let screen_frame = screen.frame();
 
-                        // 设置样式
-                        let current_style = ns_window.styleMask();
-                        ns_window.setStyleMask(current_style |
-                            NSWindowStyleMask::FullSizeContentView |
-                            NSWindowStyleMask::Borderless);
-                        ns_window.setTitlebarAppearsTransparent(true);
+                        let window_width: f64 = 185.0;
+                        let window_height: f64 = 37.0;
+
+                        // X：使用 native API 计算刘海中心对齐
+                        let aux_left_width = auxiliary_top_left.size.width;
+                        let aux_right_width = auxiliary_top_right.size.width;
+                        let screen_width = screen_frame.size.width;
+                        let x_pos = aux_left_width + (screen_width - aux_left_width - aux_right_width - window_width) / 2.0;
+
+                        // Y：窗口顶部在屏幕的最上方（macOS 坐标原点是左下角）
+                        let y_pos = screen_frame.size.height - window_height;
+
+                        // 使用 Tauri 设置位置
+                        let _ = window.set_position(PhysicalPosition::new(x_pos as i32, y_pos as i32));
+                        let _ = window.set_size(LogicalSize::new(window_width, window_height));
                     }
                 }
             }
+
+            // 忽略点击事件
+            window.set_ignore_cursor_events(true)?;
 
             window.set_focus()?;
             Ok(())
@@ -76,16 +67,35 @@ pub fn run() {
 fn set_window_size_and_center(window: tauri::Window, width: f64, height: f64) -> Result<(), String> {
     window.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
 
-    if let Some(monitor) = window.current_monitor().map_err(|e| e.to_string())? {
-        let monitor_size = monitor.size();
-        let monitor_scale = monitor.scale_factor();
-        let screen_width = monitor_size.width as f64 / monitor_scale;
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::NSWindow;
+        use objc2_foundation::{NSPoint, NSSize, NSRect};
 
-        let notch_center_ratio = 0.522;
-        let notch_center_x = screen_width * notch_center_ratio;
-        let x = (notch_center_x - width / 2.0) as i32;
-        window.set_position(PhysicalPosition::new(x * monitor_scale as i32, 0))
-            .map_err(|e| e.to_string())?;
+        if let Ok(ns_window_ptr) = window.ns_window() {
+            unsafe {
+                let ns_window: &NSWindow = &*(ns_window_ptr as *const NSWindow);
+
+                let mtm = MainThreadMarker::new().expect("Not on main thread");
+                let screen = NSScreen::mainScreen(mtm).expect("No main screen");
+                let screen_frame = screen.frame();
+
+                let y_pos = screen_frame.size.height - height;
+
+                let auxiliary_top_left = screen.auxiliaryTopLeftArea();
+                let auxiliary_top_right = screen.auxiliaryTopRightArea();
+                let aux_left_width = auxiliary_top_left.size.width;
+                let aux_right_width = auxiliary_top_right.size.width;
+                let screen_width = screen_frame.size.width;
+                let x_pos = aux_left_width + (screen_width - aux_left_width - aux_right_width - width) / 2.0;
+
+                let new_frame = NSRect::new(
+                    NSPoint::new(x_pos, y_pos),
+                    NSSize::new(width, height)
+                );
+                ns_window.setFrame_display(new_frame, true);
+            }
+        }
     }
 
     Ok(())
