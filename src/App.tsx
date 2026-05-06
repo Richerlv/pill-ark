@@ -17,6 +17,7 @@ interface Task {
 type IslandStatus = 'idle' | 'running' | 'success' | 'failed'
 
 const STARTUP_EMOJIS = ['💊', '⚡️', '✨', '🚀', '🧠', '🛠️', '🌊', '🔥']
+const COMPLETION_DISPLAY_MS = 60_000
 
 function App() {
   const startupEmojiRef = useRef(STARTUP_EMOJIS[Math.floor(Math.random() * STARTUP_EMOJIS.length)])
@@ -27,6 +28,21 @@ function App() {
   const previousTasksRef = useRef<Task[]>([])
   const completionTimerRef = useRef<number | null>(null)
   const isShowingCompletionRef = useRef(false)
+
+  const clearCompletionTimer = () => {
+    if (completionTimerRef.current) {
+      window.clearTimeout(completionTimerRef.current)
+      completionTimerRef.current = null
+    }
+  }
+
+  const dismissCompletion = () => {
+    clearCompletionTimer()
+    isShowingCompletionRef.current = false
+    setCompletedTasks([])
+    setIsExpanded(false)
+    setStatus(previousTasksRef.current.length > 0 ? 'running' : 'idle')
+  }
 
   useEffect(() => {
     // 当状态变化时，调整窗口大小并居中
@@ -56,25 +72,29 @@ function App() {
         const previousTasks = previousTasksRef.current
         const currentSessionIds = new Set(result.map((task) => task.session_id))
         const finishedTasks = previousTasks.filter((task) => !currentSessionIds.has(task.session_id))
+        const hasRunningTasks = result.length > 0
 
         if (finishedTasks.length > 0) {
-          if (completionTimerRef.current) {
-            window.clearTimeout(completionTimerRef.current)
-          }
+          clearCompletionTimer()
 
-          setCompletedTasks(finishedTasks)
+          setCompletedTasks((currentCompletedTasks) => {
+            const knownCompletedIds = new Set(currentCompletedTasks.map((task) => task.session_id))
+            const newFinishedTasks = finishedTasks.filter((task) => !knownCompletedIds.has(task.session_id))
+
+            return [...currentCompletedTasks, ...newFinishedTasks]
+          })
           setStatus('success')
           setIsExpanded(true)
           isShowingCompletionRef.current = true
 
           completionTimerRef.current = window.setTimeout(() => {
-            isShowingCompletionRef.current = false
-            setCompletedTasks([])
-            setIsExpanded(false)
-            setStatus(previousTasksRef.current.length > 0 ? 'running' : 'idle')
-          }, 6500)
+            dismissCompletion()
+          }, COMPLETION_DISPLAY_MS)
+        } else if (!isShowingCompletionRef.current && hasRunningTasks) {
+          setStatus('running')
         } else if (!isShowingCompletionRef.current) {
-          setStatus(result.length > 0 ? 'running' : 'idle')
+          setIsExpanded(false)
+          setStatus('idle')
         }
 
         setTasks(result)
@@ -88,13 +108,16 @@ function App() {
     const interval = setInterval(fetchTasks, 1000)
     return () => {
       clearInterval(interval)
-      if (completionTimerRef.current) {
-        window.clearTimeout(completionTimerRef.current)
-      }
+      clearCompletionTimer()
     }
   }, [])
 
   const toggleExpand = () => {
+    if (isShowingCompletionRef.current) {
+      dismissCompletion()
+      return
+    }
+
     setIsExpanded(!isExpanded)
   }
 
@@ -115,7 +138,10 @@ function App() {
         {status === 'success' && (
           <div className="success-state">
             <span className="success-dot" />
-            <span className="count">{startupEmojiRef.current} {completedTasks.length} task{completedTasks.length > 1 ? 's' : ''} done</span>
+            <span className="count">
+              {startupEmojiRef.current} {completedTasks.length} task{completedTasks.length > 1 ? 's' : ''} done
+              {tasks.length > 0 && ` · ${tasks.length} running`}
+            </span>
           </div>
         )}
       </div>
