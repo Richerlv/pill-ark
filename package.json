@@ -4,6 +4,8 @@
   "description": "A system tray app for tracking AI agent tasks",
   "scripts": {
     "dev": "tauri dev",
+    "dev:web": "vite --host 127.0.0.1 --port 1420",
+    "build:web": "vite build",
     "build": "tauri build",
     "preview": "tauri preview"
   },

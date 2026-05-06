@@ -49,8 +49,7 @@ pub fn run() {
                 }
             }
 
-            // 忽略点击事件
-            window.set_ignore_cursor_events(true)?;
+            window.set_ignore_cursor_events(false)?;
 
             window.set_focus()?;
             Ok(())
@@ -58,6 +57,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             core::get_running_tasks,
             core::get_task_count,
+            core::get_claude_sessions,
             set_window_size_and_center
         ])
         .run(tauri::generate_context!())
