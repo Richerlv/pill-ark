@@ -1,5 +1,5 @@
 use super::PlatformPort;
-use sysinfo::{System, ProcessStatus};
+use sysinfo::{ProcessStatus, System};
 
 #[allow(dead_code)]
 pub struct MacPlatformPort {

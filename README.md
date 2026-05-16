@@ -10,6 +10,12 @@ PillArk is a small macOS desktop utility that floats near the top of your screen
 
 If you often start a Claude Code task and then move back to your editor, browser, or another window, PillArk gives you a lightweight status island without forcing you to keep checking the terminal.
 
+## Download 📥
+
+[Download PillArk for macOS](https://github.com/Richerlv/pill-ark/releases/latest/download/PillArk_0.1.0_aarch64.dmg)
+
+The link above downloads the latest DMG installer from GitHub Releases. After downloading, open the DMG and drag `PillArk.app` into `Applications`.
+
 ## Preview ✨
 
 ### Idle 💊
@@ -138,6 +144,12 @@ MIT
 PillArk 是一个 macOS 桌面小工具：它会悬浮在屏幕上方，实时监听 Claude Code 任务状态。当没有任务运行时，它会保持紧凑的胶囊形态；当 Claude 开始工作时，它会切换成运行态；当任务结束时，它会自动展开，告诉你刚刚完成了什么。
 
 如果你经常一边开着 Claude Code 跑任务，一边切到浏览器、编辑器或其他窗口里做事，PillArk 可以给你一个轻量的状态岛，不用反复回到终端确认进度。
+
+## 下载 📥
+
+[下载 macOS 版 PillArk](https://github.com/Richerlv/pill-ark/releases/latest/download/PillArk_0.1.0_aarch64.dmg)
+
+上面的链接会从 GitHub Releases 下载最新的 DMG 安装包。下载后打开 DMG，把 `PillArk.app` 拖到 `Applications` 即可安装。
 
 ## 效果预览 ✨
 

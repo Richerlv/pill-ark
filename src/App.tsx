@@ -18,6 +18,7 @@ type IslandStatus = 'idle' | 'running' | 'success' | 'failed'
 
 const STARTUP_EMOJIS = ['💊', '⚡️', '✨', '🚀', '🧠', '🛠️', '🌊', '🔥']
 const COMPLETION_DISPLAY_MS = 60_000
+const toolLabel = (tool: string) => (tool === 'ClaudeCode' || tool === 'Claude Code' ? 'ClaudeCode' : tool)
 
 function App() {
   const startupEmojiRef = useRef(STARTUP_EMOJIS[Math.floor(Math.random() * STARTUP_EMOJIS.length)])
@@ -132,7 +133,7 @@ function App() {
         {status === 'running' && (
           <div className="running-state">
             <div className="energy-bar" />
-            <span className="count">{startupEmojiRef.current} {tasks.length} Claude task{tasks.length > 1 ? 's' : ''} running</span>
+            <span className="count">{startupEmojiRef.current} {tasks.length} agent task{tasks.length > 1 ? 's' : ''} running</span>
           </div>
         )}
         {status === 'success' && (
@@ -153,8 +154,10 @@ function App() {
               <div className="section-title">Completed</div>
               {completedTasks.map((task) => (
                 <div key={`done-${task.session_id}`} className="task-item done">
-                  <span className="task-name">{task.name}</span>
-                  <span className="task-pid">PID: {task.pid}</span>
+                  <span className="task-name">
+                    <span className="task-tool">[{toolLabel(task.tool)}]</span> {task.name}
+                  </span>
+                  <span className="task-pid">{task.pid > 0 ? `PID: ${task.pid}` : 'Session task'}</span>
                 </div>
               ))}
             </div>
@@ -165,8 +168,10 @@ function App() {
               <div className="section-title">Running</div>
               {tasks.map((task) => (
                 <div key={task.session_id} className="task-item">
-                  <span className="task-name">{task.name}</span>
-                  <span className="task-pid">PID: {task.pid}</span>
+                  <span className="task-name">
+                    <span className="task-tool">[{toolLabel(task.tool)}]</span> {task.name}
+                  </span>
+                  <span className="task-pid">{task.pid > 0 ? `PID: ${task.pid}` : 'Session task'}</span>
                 </div>
               ))}
             </div>

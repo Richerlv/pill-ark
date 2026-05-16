@@ -1,6 +1,6 @@
-use tauri::Manager;
-use objc2_app_kit::NSScreen;
 use objc2::MainThreadMarker;
+use objc2_app_kit::NSScreen;
+use tauri::Manager;
 
 mod core;
 mod ports;
@@ -16,7 +16,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
-                use objc2_foundation::{NSPoint, NSSize, NSRect};
+                use objc2_foundation::{NSPoint, NSRect, NSSize};
 
                 if let Ok(ns_window_ptr) = window.ns_window() {
                     unsafe {
@@ -31,18 +31,24 @@ pub fn run() {
                         let window_height: f64 = 37.0;
 
                         // 使用完整屏幕宽度居中（不使用 safe area）
-                        let x_pos = screen_frame.origin.x + (screen_frame.size.width - window_width) / 2.0;
+                        let x_pos =
+                            screen_frame.origin.x + (screen_frame.size.width - window_width) / 2.0;
                         // Y坐标：屏幕物理最顶端
-                        let y_pos = screen_frame.origin.y + screen_frame.size.height - window_height;
+                        let y_pos =
+                            screen_frame.origin.y + screen_frame.size.height - window_height;
 
                         // 设置窗口层级和行为，允许覆盖刘海区域
                         // NSWindowLevel::StatusBar = 25，菜单栏的级别
                         ns_window.setLevel(25);
-                        ns_window.setCollectionBehavior(NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::Stationary | NSWindowCollectionBehavior::IgnoresCycle);
+                        ns_window.setCollectionBehavior(
+                            NSWindowCollectionBehavior::CanJoinAllSpaces
+                                | NSWindowCollectionBehavior::Stationary
+                                | NSWindowCollectionBehavior::IgnoresCycle,
+                        );
 
                         let new_frame = NSRect::new(
                             NSPoint::new(x_pos, y_pos),
-                            NSSize::new(window_width, window_height)
+                            NSSize::new(window_width, window_height),
                         );
                         ns_window.setFrame_display(new_frame, true);
                     }
@@ -65,11 +71,15 @@ pub fn run() {
 }
 
 #[tauri::command]
-fn set_window_size_and_center(window: tauri::Window, width: f64, height: f64) -> Result<(), String> {
+fn set_window_size_and_center(
+    window: tauri::Window,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
-        use objc2_foundation::{NSPoint, NSSize, NSRect};
+        use objc2_foundation::{NSPoint, NSRect, NSSize};
 
         if let Ok(ns_window_ptr) = window.ns_window() {
             unsafe {
@@ -87,12 +97,13 @@ fn set_window_size_and_center(window: tauri::Window, width: f64, height: f64) ->
                 // 设置窗口层级和行为，允许覆盖刘海区域
                 // NSWindowLevel::StatusBar = 25，菜单栏的级别
                 ns_window.setLevel(25);
-                ns_window.setCollectionBehavior(NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::Stationary | NSWindowCollectionBehavior::IgnoresCycle);
-
-                let new_frame = NSRect::new(
-                    NSPoint::new(x_pos, y_pos),
-                    NSSize::new(width, height)
+                ns_window.setCollectionBehavior(
+                    NSWindowCollectionBehavior::CanJoinAllSpaces
+                        | NSWindowCollectionBehavior::Stationary
+                        | NSWindowCollectionBehavior::IgnoresCycle,
                 );
+
+                let new_frame = NSRect::new(NSPoint::new(x_pos, y_pos), NSSize::new(width, height));
                 ns_window.setFrame_display(new_frame, true);
             }
         }
@@ -100,7 +111,9 @@ fn set_window_size_and_center(window: tauri::Window, width: f64, height: f64) ->
 
     #[cfg(not(target_os = "macos"))]
     {
-        window.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
+        window
+            .set_size(LogicalSize::new(width, height))
+            .map_err(|e| e.to_string())?;
     }
 
     Ok(())

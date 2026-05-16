@@ -179,6 +179,11 @@ body {
   font-weight: 500;
 }
 
+.task-tool {
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 700;
+}
+
 .task-pid {
   flex: 0 0 auto;
   font-size: 10px;

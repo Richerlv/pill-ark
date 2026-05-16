@@ -6,7 +6,6 @@ pub trait PlatformPort {
     fn is_platform_supported() -> bool;
 }
 
-
 #[cfg(not(target_os = "macos"))]
 pub struct DefaultPlatformPort;
 
