@@ -38,7 +38,7 @@ pnpm-debug.log*
 src-tauri/gen/
 
 # Local test files (not part of the project)
-user_case/
+# user_case/
 
 # Temporary files
 *.tmp
