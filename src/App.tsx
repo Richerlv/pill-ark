@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import './styles.css'
 
@@ -19,8 +19,39 @@ type IslandStatus = 'idle' | 'running' | 'success' | 'failed'
 const STARTUP_EMOJIS = ['💊', '⚡️', '✨', '🚀', '🧠', '🛠️', '🌊', '🔥']
 const COMPLETION_DISPLAY_MS = 60_000
 const toolLabel = (tool: string) => (tool === 'ClaudeCode' || tool === 'Claude Code' ? 'ClaudeCode' : tool)
+const BASE_WINDOW_SIZE = {
+  idle: { width: 276, height: 39 },
+  running: { width: 316, height: 39 },
+  success: { width: 296, height: 39 },
+  expanded: { width: 384, height: 154 },
+  successExpanded: { width: 384, height: 166 },
+}
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
+const scaled = (value: number, scale: number) => Math.round(value * scale)
+
+const createWindowSizes = () => {
+  const screenWidth = typeof window !== 'undefined' ? window.screen?.width || 1512 : 1512
+  const widthScale = clamp(screenWidth / 1512, 1, 1.08)
+  const expandedHeightScale = clamp(screenWidth / 1512, 1, 1.08)
+
+  return {
+    idle: { width: scaled(BASE_WINDOW_SIZE.idle.width, widthScale), height: BASE_WINDOW_SIZE.idle.height },
+    running: { width: scaled(BASE_WINDOW_SIZE.running.width, widthScale), height: BASE_WINDOW_SIZE.running.height },
+    success: { width: scaled(BASE_WINDOW_SIZE.success.width, widthScale), height: BASE_WINDOW_SIZE.success.height },
+    expanded: {
+      width: scaled(BASE_WINDOW_SIZE.expanded.width, widthScale),
+      height: scaled(BASE_WINDOW_SIZE.expanded.height, expandedHeightScale),
+    },
+    successExpanded: {
+      width: scaled(BASE_WINDOW_SIZE.successExpanded.width, widthScale),
+      height: scaled(BASE_WINDOW_SIZE.successExpanded.height, expandedHeightScale),
+    },
+  }
+}
 
 function App() {
+  const windowSize = useMemo(createWindowSizes, [])
   const startupEmojiRef = useRef(STARTUP_EMOJIS[Math.floor(Math.random() * STARTUP_EMOJIS.length)])
   const [tasks, setTasks] = useState<Task[]>([])
   const [completedTasks, setCompletedTasks] = useState<Task[]>([])
@@ -50,13 +81,13 @@ function App() {
     const adjustWindow = async () => {
       try {
         if (isExpanded) {
-          await invoke('set_window_size_and_center', { width: 320, height: status === 'success' ? 138 : 128 })
+          await invoke('set_window_size_and_center', status === 'success' ? windowSize.successExpanded : windowSize.expanded)
         } else if (status === 'running') {
-          await invoke('set_window_size_and_center', { width: 240, height: 37 })
+          await invoke('set_window_size_and_center', windowSize.running)
         } else if (status === 'success') {
-          await invoke('set_window_size_and_center', { width: 220, height: 37 })
+          await invoke('set_window_size_and_center', windowSize.success)
         } else {
-          await invoke('set_window_size_and_center', { width: 185, height: 37 })
+          await invoke('set_window_size_and_center', windowSize.idle)
         }
       } catch (e) {
         console.error('Failed to adjust window:', e)
@@ -64,7 +95,7 @@ function App() {
     }
 
     adjustWindow()
-  }, [status, isExpanded])
+  }, [status, isExpanded, windowSize])
 
   useEffect(() => {
     const fetchTasks = async () => {
@@ -122,25 +153,39 @@ function App() {
     setIsExpanded(!isExpanded)
   }
 
+  const currentWindowSize = isExpanded
+    ? status === 'success'
+      ? windowSize.successExpanded
+      : windowSize.expanded
+    : windowSize[status === 'failed' ? 'idle' : status]
+  const pillStyle = {
+    '--pill-width': `${currentWindowSize.width}px`,
+    '--pill-height': `${currentWindowSize.height}px`,
+  } as CSSProperties
+
   return (
-    <div className={`pill ${status} ${isExpanded ? 'expanded' : ''}`} onClick={toggleExpand}>
+    <div className={`pill ${status} ${isExpanded ? 'expanded' : ''}`} style={pillStyle} onClick={toggleExpand}>
       <div className="pill-content">
         {status === 'idle' && (
-          <div className="idle-state">
-            <span className="text">{startupEmojiRef.current} PillArk</span>
+          <div className="island-grid idle-state">
+            <span className="status-mark idle-mark">{startupEmojiRef.current}</span>
+            <span className="notch-space" />
+            <span className="island-label">PillArk</span>
           </div>
         )}
         {status === 'running' && (
-          <div className="running-state">
-            <div className="energy-bar" />
-            <span className="count">{startupEmojiRef.current} {tasks.length} agent task{tasks.length > 1 ? 's' : ''} running</span>
+          <div className="island-grid running-state">
+            <span className="status-mark running-mark" />
+            <span className="notch-space" />
+            <span className="count">{tasks.length} agent task{tasks.length > 1 ? 's' : ''} running</span>
           </div>
         )}
         {status === 'success' && (
-          <div className="success-state">
-            <span className="success-dot" />
+          <div className="island-grid success-state">
+            <span className="status-mark success-dot" />
+            <span className="notch-space" />
             <span className="count">
-              {startupEmojiRef.current} {completedTasks.length} task{completedTasks.length > 1 ? 's' : ''} done
+              {completedTasks.length} task{completedTasks.length > 1 ? 's' : ''} done
               {tasks.length > 0 && ` · ${tasks.length} running`}
             </span>
           </div>

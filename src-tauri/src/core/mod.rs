@@ -39,20 +39,44 @@ struct ClaudeSession {
     updated_at: u64,
 }
 
-fn claude_sessions_dir() -> Option<PathBuf> {
+fn home_dir() -> Option<PathBuf> {
     env::var_os("HOME")
         .map(PathBuf::from)
-        .map(|home| home.join(".claude").join("sessions"))
+        .or_else(|| env::var_os("USERPROFILE").map(PathBuf::from))
+        .or_else(|| {
+            let drive = env::var_os("HOMEDRIVE")?;
+            let path = env::var_os("HOMEPATH")?;
+            let mut home = PathBuf::from(drive);
+            home.push(path);
+            Some(home)
+        })
+}
+
+fn claude_sessions_dir() -> Option<PathBuf> {
+    home_dir().map(|home| home.join(".claude").join("sessions"))
 }
 
 fn opencode_data_dir() -> Option<PathBuf> {
     env::var_os("OPENCODE_DATA_DIR")
         .map(PathBuf::from)
         .or_else(|| {
-            env::var_os("HOME")
+            env::var_os("LOCALAPPDATA")
                 .map(PathBuf::from)
-                .map(|home| home.join(".local").join("share").join("opencode"))
+                .map(|local_app_data| local_app_data.join("opencode"))
+                .filter(|path| path.exists())
         })
+        .or_else(|| {
+            env::var_os("APPDATA")
+                .map(PathBuf::from)
+                .map(|app_data| app_data.join("opencode"))
+                .filter(|path| path.exists())
+        })
+        .or_else(|| {
+            home_dir()
+                .map(|home| home.join(".local").join("share").join("opencode"))
+                .filter(|path| path.exists())
+        })
+        .or_else(|| home_dir().map(|home| home.join(".local").join("share").join("opencode")))
 }
 
 fn is_active_agent_status(status: &str) -> bool {
@@ -88,6 +112,91 @@ fn read_claude_sessions() -> Vec<ClaudeSession> {
         .collect()
 }
 
+fn clean_prompt_text(text: &str) -> Option<String> {
+    let prompt = text.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    if prompt.is_empty() {
+        None
+    } else {
+        Some(prompt)
+    }
+}
+
+fn claude_project_dirs() -> Vec<PathBuf> {
+    let Some(home) = home_dir() else {
+        return Vec::new();
+    };
+    let projects_dir = home.join(".claude").join("projects");
+    let Ok(entries) = fs::read_dir(projects_dir) else {
+        return Vec::new();
+    };
+
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect()
+}
+
+fn claude_prompt_from_content(content: &serde_json::Value) -> Option<String> {
+    content.as_str().and_then(clean_prompt_text).or_else(|| {
+        content.as_array().and_then(|parts| {
+            clean_prompt_text(
+                &parts
+                    .iter()
+                    .filter_map(|part| part.get("text").and_then(|text| text.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            )
+        })
+    })
+}
+
+fn read_claude_last_prompt(session_id: &str) -> Option<String> {
+    for project_dir in claude_project_dirs() {
+        let transcript_path = project_dir.join(format!("{session_id}.jsonl"));
+        if !transcript_path.exists() {
+            continue;
+        }
+
+        let Ok(content) = fs::read_to_string(transcript_path) else {
+            continue;
+        };
+
+        for line in content.lines().rev() {
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+
+            if let Some(prompt) = value
+                .get("lastPrompt")
+                .and_then(|prompt| prompt.as_str())
+                .and_then(clean_prompt_text)
+            {
+                return Some(prompt);
+            }
+
+            let is_user = value
+                .get("type")
+                .and_then(|message_type| message_type.as_str())
+                .is_some_and(|message_type| message_type == "user");
+            if !is_user {
+                continue;
+            }
+
+            if let Some(prompt) = value
+                .get("message")
+                .and_then(|message| message.get("content"))
+                .and_then(claude_prompt_from_content)
+            {
+                return Some(prompt);
+            }
+        }
+    }
+
+    None
+}
+
 fn project_name(cwd: &str) -> String {
     PathBuf::from(cwd)
         .file_name()
@@ -102,9 +211,10 @@ fn claude_tasks(include_inactive: bool) -> Vec<Task> {
         .filter(|session| include_inactive || is_active_agent_status(&session.status))
         .map(|session| {
             let project = project_name(&session.cwd);
+            let name = read_claude_last_prompt(&session.session_id).unwrap_or(project);
 
             Task {
-                name: project,
+                name,
                 pid: session.pid,
                 status: task_status(&session.status),
                 start_time: session.started_at,
@@ -132,6 +242,7 @@ struct OpenCodeActiveMessage {
     session_id: String,
     time_created: u64,
     time_updated: u64,
+    prompt: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -141,6 +252,11 @@ struct OpenCodePromptActivity {
 }
 
 fn sqlite3_bin() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        return "sqlite3.exe";
+    }
+
     if Path::new("/usr/bin/sqlite3").exists() {
         "/usr/bin/sqlite3"
     } else {
@@ -211,17 +327,14 @@ fn modified_time_millis(path: &Path) -> Option<u64> {
         .map(|duration| duration.as_millis() as u64)
 }
 
-fn assistant_message_is_active(data: &str) -> bool {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(data) else {
-        return false;
-    };
-
+fn active_assistant_parent_id(data: &str) -> Option<Option<String>> {
+    let value = serde_json::from_str::<serde_json::Value>(data).ok()?;
     let is_assistant = value
         .get("role")
         .and_then(|role| role.as_str())
         .is_some_and(|role| role == "assistant");
     if !is_assistant {
-        return false;
+        return None;
     }
 
     let has_completed_at = value
@@ -230,7 +343,110 @@ fn assistant_message_is_active(data: &str) -> bool {
         .is_some();
     let has_finish_reason = value.get("finish").is_some();
 
-    !has_completed_at && !has_finish_reason
+    if has_completed_at || has_finish_reason {
+        return None;
+    }
+
+    Some(
+        value
+            .get("parentID")
+            .and_then(|parent_id| parent_id.as_str())
+            .map(|parent_id| parent_id.to_string()),
+    )
+}
+
+fn user_message_role(data: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(data)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("role")
+                .and_then(|role| role.as_str())
+                .map(|role| role == "user")
+        })
+        .unwrap_or(false)
+}
+
+fn opencode_part_text(data: &str) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(data).ok()?;
+    let is_text = value
+        .get("type")
+        .and_then(|part_type| part_type.as_str())
+        .is_some_and(|part_type| part_type == "text");
+    if !is_text {
+        return None;
+    }
+
+    value
+        .get("text")
+        .and_then(|text| text.as_str())
+        .and_then(clean_prompt_text)
+}
+
+#[derive(Debug, Clone)]
+struct OpenCodeUserPrompt {
+    session_id: String,
+    time_created: u64,
+    text: String,
+}
+
+fn read_opencode_user_prompts(db_path: &Path) -> HashMap<String, OpenCodeUserPrompt> {
+    let query = "select m.id, m.session_id, m.time_created, m.data, p.data from message m join part p on p.message_id = m.id order by m.time_created desc, p.time_created asc limit 1000;";
+    let Ok(output) = Command::new(sqlite3_bin())
+        .args(["-readonly", "-separator", "\u{1f}"])
+        .arg(db_path)
+        .arg(query)
+        .output()
+    else {
+        return HashMap::new();
+    };
+
+    if !output.status.success() {
+        return HashMap::new();
+    }
+
+    let mut prompts: HashMap<String, OpenCodeUserPrompt> = HashMap::new();
+
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let mut fields = line.splitn(5, '\u{1f}');
+        let Some(id) = fields.next().map(str::to_string) else {
+            continue;
+        };
+        let Some(session_id) = fields.next().map(str::to_string) else {
+            continue;
+        };
+        let Some(time_created) = fields.next().and_then(|time| time.parse().ok()) else {
+            continue;
+        };
+        let Some(message_data) = fields.next() else {
+            continue;
+        };
+        let Some(part_data) = fields.next() else {
+            continue;
+        };
+
+        if !user_message_role(message_data) {
+            continue;
+        }
+
+        let Some(text) = opencode_part_text(part_data) else {
+            continue;
+        };
+
+        prompts
+            .entry(id)
+            .and_modify(|prompt| {
+                prompt.text.push(' ');
+                prompt.text.push_str(&text);
+            })
+            .or_insert(OpenCodeUserPrompt {
+                session_id,
+                time_created,
+                text,
+            });
+    }
+
+    prompts
 }
 
 fn read_opencode_latest_messages() -> HashMap<String, OpenCodeActiveMessage> {
@@ -242,6 +458,7 @@ fn read_opencode_latest_messages() -> HashMap<String, OpenCodeActiveMessage> {
         return HashMap::new();
     }
 
+    let user_prompts = read_opencode_user_prompts(&db_path);
     let query = "select id, session_id, time_created, time_updated, data from message order by time_updated desc limit 200;";
     let Ok(output) = Command::new(sqlite3_bin())
         .args(["-readonly", "-separator", "\u{1f}"])
@@ -267,16 +484,32 @@ fn read_opencode_latest_messages() -> HashMap<String, OpenCodeActiveMessage> {
             let time_created = fields.next()?.parse().ok()?;
             let time_updated = fields.next()?.parse().ok()?;
             let data = fields.next()?;
+            let parent_id = active_assistant_parent_id(data)?;
 
-            if !assistant_message_is_active(data) || !seen_sessions.insert(session_id.clone()) {
+            if !seen_sessions.insert(session_id.clone()) {
                 return None;
             }
+
+            let prompt = parent_id
+                .as_ref()
+                .and_then(|parent_id| user_prompts.get(parent_id))
+                .map(|prompt| prompt.text.clone())
+                .or_else(|| {
+                    user_prompts
+                        .values()
+                        .filter(|prompt| {
+                            prompt.session_id == session_id && prompt.time_created <= time_created
+                        })
+                        .max_by_key(|prompt| prompt.time_created)
+                        .map(|prompt| prompt.text.clone())
+                });
 
             Some(OpenCodeActiveMessage {
                 id,
                 session_id,
                 time_created,
                 time_updated,
+                prompt,
             })
         })
         .map(|message| (message.session_id.clone(), message))
@@ -450,6 +683,44 @@ mod tests {
 
         assert!(sessions.is_empty());
     }
+
+    #[test]
+    fn prompt_text_is_cleaned_for_display() {
+        assert_eq!(
+            clean_prompt_text("  build   a nicer\n\n island  "),
+            Some("build a nicer island".to_string())
+        );
+    }
+
+    #[test]
+    fn opencode_active_assistant_exposes_parent_message() {
+        let parent_id = active_assistant_parent_id(
+            r#"{"parentID":"msg_user","role":"assistant","time":{"created":1}}"#,
+        );
+
+        assert_eq!(parent_id, Some(Some("msg_user".to_string())));
+    }
+
+    #[test]
+    fn opencode_completed_assistant_is_not_active() {
+        let parent_id = active_assistant_parent_id(
+            r#"{"parentID":"msg_user","role":"assistant","time":{"created":1,"completed":2},"finish":"stop"}"#,
+        );
+
+        assert_eq!(parent_id, None);
+    }
+
+    #[test]
+    fn opencode_text_part_extracts_prompt_text() {
+        assert_eq!(
+            opencode_part_text(r#"{"type":"text","text":"  replace new session  "}"#),
+            Some("replace new session".to_string())
+        );
+        assert_eq!(
+            opencode_part_text(r#"{"type":"reasoning","text":"hidden"}"#),
+            None
+        );
+    }
 }
 
 fn opencode_tasks() -> Vec<Task> {
@@ -461,11 +732,27 @@ fn opencode_tasks() -> Vec<Task> {
         .filter_map(|activity| {
             let session = sessions
                 .iter()
-                .find(|session| session.id == activity.session_id)?;
-            let message = latest_messages.get(&session.id);
-            let name = Some(session.title.clone())
-                .filter(|title| !title.is_empty())
-                .unwrap_or_else(|| project_name(&session.directory));
+                .find(|session| session.id == activity.session_id);
+            let message = latest_messages.get(&activity.session_id);
+            let cwd = session
+                .map(|session| session.directory.clone())
+                .unwrap_or_else(|| String::from(""));
+            let name = message
+                .and_then(|message| message.prompt.clone())
+                .or_else(|| {
+                    session
+                        .map(|session| session.title.clone())
+                        .filter(|title| !title.is_empty() && title != "new session")
+                })
+                .or_else(|| {
+                    cwd.is_empty()
+                        .then(|| activity.session_id.clone())
+                        .or_else(|| Some(project_name(&cwd)))
+                })
+                .unwrap_or_else(|| activity.session_id.clone());
+            let session_updated_at = session
+                .map(|session| session.time_updated)
+                .unwrap_or(activity.updated_at);
 
             Some(Task {
                 name,
@@ -473,13 +760,13 @@ fn opencode_tasks() -> Vec<Task> {
                 status: TaskStatus::Running,
                 start_time: message
                     .map(|message| message.time_created)
-                    .unwrap_or(session.time_updated),
-                command: format!("opencode session {}", session.id),
+                    .unwrap_or(session_updated_at),
+                command: format!("opencode session {}", activity.session_id),
                 tool: "OpenCode".to_string(),
-                cwd: session.directory.clone(),
+                cwd,
                 session_id: format!(
                     "opencode:{}:{}",
-                    session.id,
+                    activity.session_id,
                     message
                         .map(|message| message.id.as_str())
                         .unwrap_or("prompt")
@@ -487,7 +774,7 @@ fn opencode_tasks() -> Vec<Task> {
                 updated_at: message
                     .map(|message| message.time_updated)
                     .unwrap_or(activity.updated_at)
-                    .max(session.time_updated),
+                    .max(session_updated_at),
             })
         })
         .collect()

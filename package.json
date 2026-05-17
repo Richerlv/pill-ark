@@ -1,6 +1,6 @@
 {
   "name": "pill-ark",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A system tray app for tracking AI agent tasks",
   "scripts": {
     "dev": "tauri dev",
@@ -8,6 +8,8 @@
     "build:web": "vite build",
     "build": "tauri build --bundles app && npm run build:dmg",
     "build:app": "tauri build --bundles app",
+    "build:mac": "tauri build --bundles app && npm run build:dmg",
+    "build:win": "tauri build --bundles nsis",
     "build:dmg": "node scripts/build-dmg.mjs",
     "preview": "tauri preview"
   },

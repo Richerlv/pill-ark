@@ -1,9 +1,14 @@
+#[cfg(target_os = "macos")]
 use objc2::MainThreadMarker;
+#[cfg(target_os = "macos")]
 use objc2_app_kit::NSScreen;
 use tauri::Manager;
 
 mod core;
 mod ports;
+
+const INITIAL_WINDOW_WIDTH: f64 = 276.0;
+const INITIAL_WINDOW_HEIGHT: f64 = 39.0;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -27,8 +32,8 @@ pub fn run() {
                         let screen = NSScreen::mainScreen(mtm).expect("No main screen");
                         let screen_frame = screen.frame();
 
-                        let window_width: f64 = 185.0;
-                        let window_height: f64 = 37.0;
+                        let window_width: f64 = INITIAL_WINDOW_WIDTH;
+                        let window_height: f64 = INITIAL_WINDOW_HEIGHT;
 
                         // 使用完整屏幕宽度居中（不使用 safe area）
                         let x_pos =
@@ -55,6 +60,15 @@ pub fn run() {
                 }
             }
 
+            #[cfg(not(target_os = "macos"))]
+            {
+                position_webview_window_top_center(
+                    &window,
+                    INITIAL_WINDOW_WIDTH,
+                    INITIAL_WINDOW_HEIGHT,
+                )?;
+            }
+
             window.set_ignore_cursor_events(false)?;
 
             window.set_focus()?;
@@ -68,6 +82,56 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(not(target_os = "macos"))]
+fn position_webview_window_top_center(
+    window: &tauri::WebviewWindow,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    use tauri::{LogicalPosition, LogicalSize};
+
+    window
+        .set_size(LogicalSize::new(width, height))
+        .map_err(|e| e.to_string())?;
+
+    if let Some(monitor) = window.current_monitor().map_err(|e| e.to_string())? {
+        let screen_size = monitor.size();
+        let x_pos = (screen_size.width as f64 - width) / 2.0;
+        let y_pos = 0.0;
+
+        window
+            .set_position(LogicalPosition::new(x_pos, y_pos))
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn position_window_top_center(
+    window: &tauri::Window,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    use tauri::{LogicalPosition, LogicalSize};
+
+    window
+        .set_size(LogicalSize::new(width, height))
+        .map_err(|e| e.to_string())?;
+
+    if let Some(monitor) = window.current_monitor().map_err(|e| e.to_string())? {
+        let screen_size = monitor.size();
+        let x_pos = (screen_size.width as f64 - width) / 2.0;
+        let y_pos = 0.0;
+
+        window
+            .set_position(LogicalPosition::new(x_pos, y_pos))
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -111,9 +175,7 @@ fn set_window_size_and_center(
 
     #[cfg(not(target_os = "macos"))]
     {
-        window
-            .set_size(LogicalSize::new(width, height))
-            .map_err(|e| e.to_string())?;
+        position_window_top_center(&window, width, height)?;
     }
 
     Ok(())

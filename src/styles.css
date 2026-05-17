@@ -8,134 +8,172 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: transparent;
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
 .pill {
   position: fixed;
   top: 0;
   left: 0;
-  background: #000000;
+  background: #000;
   border: none;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    width 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.45s ease,
+    background 0.45s ease;
   overflow: hidden;
   cursor: pointer;
   user-select: none;
-  /* 基础胶囊态：高度37pt，宽度185pt，圆角18.5pt */
-  width: 185px;
-  height: 37px;
-  border-radius: 18.5px;
+  width: var(--pill-width, 276px);
+  height: var(--pill-height, 39px);
+  border-radius: 19.5px;
+  box-shadow: none;
 }
 
 .pill.running {
-  width: 240px;
-  height: 37px;
+  box-shadow: none;
 }
 
 .pill.success {
-  width: 220px;
-  height: 37px;
+  box-shadow: none;
 }
 
 .pill.expanded {
-  width: 320px;
-  height: 128px;
-  border-radius: 18.5px 18.5px 16px 16px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
-}
-
-.pill.success.expanded {
-  height: 138px;
+  border-radius: 19.5px 19.5px 18px 18px;
+  box-shadow: none;
 }
 
 .pill-content {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  padding: 0 12px;
+  height: 39px;
+  padding: 0 16px;
   background: transparent;
   z-index: 10;
 }
 
-.idle-state {
-  display: flex;
+.island-grid {
+  display: grid;
+  grid-template-columns: minmax(70px, 1fr) 82px minmax(70px, 1fr);
   align-items: center;
-  justify-content: center;
   width: 100%;
   height: 100%;
+  gap: 0;
 }
 
-.idle-state .text {
+.notch-space {
+  display: block;
+  height: 100%;
+  pointer-events: none;
+}
+
+.status-mark {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.idle-mark {
+  width: 24px;
+  height: 24px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.9);
-  font-weight: 500;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  animation: quiet-breathe 4.8s ease-in-out infinite;
 }
 
-.running-state,
-.success-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
+.island-label {
+  justify-self: end;
+  font-size: 12px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.88);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-.energy-bar {
+.running-state::before {
+  content: '';
   position: absolute;
-  left: 0;
+  left: 16px;
+  right: 16px;
   top: 0;
-  bottom: 0;
-  width: 100%;
+  height: 100%;
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(99, 179, 237, 0.3) 25%,
-    rgba(99, 179, 237, 0.6) 50%,
-    rgba(99, 179, 237, 0.3) 75%,
+    rgba(125, 211, 252, 0.06) 38%,
+    rgba(125, 211, 252, 0.2) 50%,
+    rgba(125, 211, 252, 0.06) 62%,
     transparent 100%
   );
   background-size: 200% 100%;
-  animation: energy-flow 2s linear infinite;
-  opacity: 0.5;
+  animation: island-sheen 4.8s ease-in-out infinite;
+  opacity: 0.7;
+  pointer-events: none;
 }
 
-@keyframes energy-flow {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+.running-mark {
+  width: 9px;
+  height: 9px;
+  margin-left: 7px;
+  border-radius: 999px;
+  background: #7dd3fc;
+  box-shadow:
+    0 0 12px rgba(125, 211, 252, 0.82),
+    0 0 28px rgba(125, 211, 252, 0.24);
+  animation: task-breathe 2.7s ease-in-out infinite;
 }
 
 .count {
   position: relative;
+  justify-self: end;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.9);
-  font-weight: 500;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.88);
+  font-weight: 600;
   z-index: 1;
   white-space: nowrap;
 }
 
-.success-state {
-  gap: 8px;
-}
-
 .success-dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
+  margin-left: 7px;
   border-radius: 999px;
   background: #34d399;
-  box-shadow: 0 0 14px rgba(52, 211, 153, 0.95);
-  animation: success-pulse 1.3s ease-in-out infinite;
+  box-shadow:
+    0 0 12px rgba(52, 211, 153, 0.78),
+    0 0 26px rgba(52, 211, 153, 0.22);
+  animation: success-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes quiet-breathe {
+  0%, 100% { opacity: 0.78; transform: scale(0.98); }
+  50% { opacity: 1; transform: scale(1.02); }
+}
+
+@keyframes task-breathe {
+  0%, 100% { opacity: 0.62; transform: scale(0.88); }
+  50% { opacity: 1; transform: scale(1.18); }
+}
+
+@keyframes island-sheen {
+  0%, 100% { background-position: 180% 0; opacity: 0.28; }
+  50% { background-position: 20% 0; opacity: 0.72; }
 }
 
 @keyframes success-pulse {
   0%, 100% { transform: scale(0.9); opacity: 0.7; }
-  50% { transform: scale(1.15); opacity: 1; }
+  50% { transform: scale(1.12); opacity: 1; }
 }
 
 .task-list {
   border-top: 1px solid rgba(255, 255, 255, 0.1);
-  max-height: 101px;
+  max-height: calc(var(--pill-height, 154px) - 39px);
   overflow-y: auto;
-  background: rgba(12, 14, 18, 0.96);
+  background: rgba(10, 12, 16, 0.7);
 }
 
 .task-section + .task-section {

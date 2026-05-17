@@ -52,6 +52,7 @@ PillArk currently supports:
 - Claude Code (`claude`)
 - opencode (`opencode`)
 - macOS
+- Windows
 
 Claude Code task status is detected by reading `~/.claude/sessions/*.json`. A session is treated as active when its status is `running`, `busy`, `working`, or `thinking`.
 
@@ -119,7 +120,8 @@ pill-ark/
 npm run dev        # Start the desktop app in development
 npm run dev:web    # Start only the Vite frontend
 npm run build:web  # Build the frontend
-npm run build      # Build the Tauri app
+npm run build      # Build the macOS app and DMG
+npm run build:win  # Build the Windows NSIS installer on Windows
 ```
 
 ## Roadmap 🗺️
@@ -129,7 +131,7 @@ npm run build      # Build the Tauri app
 - Task completion notifications
 - Task history
 - Settings panel
-- Windows / Linux support
+- Linux support
 
 ## License 📄
 
@@ -191,6 +193,7 @@ PillArk 当前支持：
 - Claude Code (`claude`)
 - opencode (`opencode`)
 - macOS
+- Windows
 
 Claude Code 通过读取 `~/.claude/sessions/*.json` 判断 session 状态。只要 session 状态是 `running`、`busy`、`working` 或 `thinking`，就会被视为正在运行的任务。
 
@@ -258,7 +261,8 @@ pill-ark/
 npm run dev        # 启动桌面开发版
 npm run dev:web    # 只启动 Vite 前端
 npm run build:web  # 构建前端
-npm run build      # 构建 Tauri 应用
+npm run build      # 构建 macOS 应用和 DMG
+npm run build:win  # 在 Windows 上构建 NSIS 安装包
 ```
 
 ## Roadmap 🗺️
@@ -268,7 +272,7 @@ npm run build      # 构建 Tauri 应用
 - 任务完成通知
 - 任务历史记录
 - 设置面板
-- Windows / Linux 支持
+- Linux 支持
 
 ## License 📄
 

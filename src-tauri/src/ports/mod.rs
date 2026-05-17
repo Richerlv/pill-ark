@@ -1,3 +1,4 @@
+#[cfg(target_os = "macos")]
 pub mod mac_port;
 
 #[allow(dead_code)]
