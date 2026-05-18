@@ -79,6 +79,24 @@ fn opencode_data_dir() -> Option<PathBuf> {
         .or_else(|| home_dir().map(|home| home.join(".local").join("share").join("opencode")))
 }
 
+fn codex_home_dir() -> Option<PathBuf> {
+    env::var_os("CODEX_HOME")
+        .map(PathBuf::from)
+        .or_else(|| home_dir().map(|home| home.join(".codex")))
+}
+
+fn codex_logs_db_path() -> Option<PathBuf> {
+    codex_home_dir()
+        .map(|home| home.join("logs_2.sqlite"))
+        .filter(|path| path.exists())
+}
+
+fn codex_state_db_path() -> Option<PathBuf> {
+    codex_home_dir()
+        .map(|home| home.join("state_5.sqlite"))
+        .filter(|path| path.exists())
+}
+
 fn is_active_agent_status(status: &str) -> bool {
     matches!(
         status.to_ascii_lowercase().as_str(),
@@ -249,6 +267,26 @@ struct OpenCodeActiveMessage {
 struct OpenCodePromptActivity {
     session_id: String,
     updated_at: u64,
+}
+
+#[derive(Debug, Clone)]
+struct CodexThread {
+    id: String,
+    title: String,
+    cwd: String,
+    updated_at: u64,
+    first_user_message: String,
+    preview: String,
+}
+
+#[derive(Debug, Clone)]
+struct CodexTurnActivity {
+    thread_id: String,
+    turn_id: String,
+    start_time: u64,
+    updated_at: u64,
+    cwd: Option<String>,
+    completed: bool,
 }
 
 fn sqlite3_bin() -> &'static str {
@@ -523,6 +561,21 @@ fn line_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     Some(&rest[..end])
 }
 
+fn telemetry_value(line: &str, key: &str) -> Option<String> {
+    let start = line.find(key)? + key.len();
+    let rest = &line[start..];
+    let end = rest
+        .find(|ch: char| ch.is_whitespace() || matches!(ch, '}' | ']' | ')' | ',' | ';'))
+        .unwrap_or(rest.len());
+    Some(&rest[..end])
+        .map(|value| {
+            value
+                .trim_matches(|ch| matches!(ch, '"' | '\'' | ',' | ';' | ':' | '}' | ']' | ')'))
+                .to_string()
+        })
+        .filter(|value| !value.is_empty())
+}
+
 fn line_session_id(line: &str) -> Option<String> {
     let session_id = line_value(line, "sessionID=").or_else(|| line_value(line, "session.id="))?;
 
@@ -605,6 +658,207 @@ fn read_opencode_prompt_activity() -> Vec<OpenCodePromptActivity> {
             .ok()
             .map(|content| (modified_at, content))
     }))
+}
+
+fn sqlite_field(value: &str) -> String {
+    value.replace('\u{1f}', " ").trim().to_string()
+}
+
+fn read_codex_threads() -> HashMap<String, CodexThread> {
+    let Some(db_path) = codex_state_db_path() else {
+        return HashMap::new();
+    };
+
+    let clean = |column: &str| {
+        format!("replace(replace(coalesce({column},''), char(10), ' '), char(31), ' ')")
+    };
+    let query = format!(
+        "select id, {title}, {cwd}, coalesce(updated_at_ms, updated_at * 1000, 0), {first_user_message}, {preview} from threads order by coalesce(updated_at_ms, updated_at * 1000, 0) desc limit 200;",
+        title = clean("title"),
+        cwd = clean("cwd"),
+        first_user_message = clean("first_user_message"),
+        preview = clean("preview")
+    );
+    let Ok(output) = Command::new(sqlite3_bin())
+        .args(["-readonly", "-separator", "\u{1f}"])
+        .arg(db_path)
+        .arg(query)
+        .output()
+    else {
+        return HashMap::new();
+    };
+
+    if !output.status.success() {
+        return HashMap::new();
+    }
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.splitn(6, '\u{1f}');
+            let id = sqlite_field(fields.next()?);
+            let title = sqlite_field(fields.next()?);
+            let cwd = sqlite_field(fields.next()?);
+            let updated_at = fields.next()?.trim().parse().ok()?;
+            let first_user_message = sqlite_field(fields.next()?);
+            let preview = sqlite_field(fields.next()?);
+
+            Some((
+                id.clone(),
+                CodexThread {
+                    id,
+                    title,
+                    cwd,
+                    updated_at,
+                    first_user_message,
+                    preview,
+                },
+            ))
+        })
+        .collect()
+}
+
+fn codex_turn_completed(line: &str) -> bool {
+    line.contains("event.kind=response.completed")
+        || line.contains("\"type\":\"response.completed\"")
+        || line.contains("response.completed")
+}
+
+fn codex_turn_activity_from_log_rows(
+    rows: impl IntoIterator<Item = (u64, String, String)>,
+) -> HashMap<String, CodexTurnActivity> {
+    let mut turns = HashMap::new();
+
+    for (timestamp, thread_id, body) in rows {
+        let Some(turn_id) =
+            telemetry_value(&body, "turn.id=").or_else(|| telemetry_value(&body, "turn_id="))
+        else {
+            continue;
+        };
+        let thread_id = if thread_id.is_empty() {
+            telemetry_value(&body, "thread.id=").unwrap_or_default()
+        } else {
+            thread_id
+        };
+        if thread_id.is_empty() {
+            continue;
+        }
+
+        let key = format!("{thread_id}:{turn_id}");
+        let is_completed = codex_turn_completed(&body);
+        let cwd = telemetry_value(&body, "cwd=");
+
+        turns
+            .entry(key)
+            .and_modify(|activity: &mut CodexTurnActivity| {
+                activity.updated_at = activity.updated_at.max(timestamp);
+                activity.start_time = activity.start_time.min(timestamp);
+                activity.completed |= is_completed;
+                if activity.cwd.is_none() {
+                    activity.cwd = cwd.clone();
+                }
+            })
+            .or_insert(CodexTurnActivity {
+                thread_id,
+                turn_id,
+                start_time: timestamp,
+                updated_at: timestamp,
+                cwd,
+                completed: is_completed,
+            });
+    }
+
+    turns
+}
+
+fn read_codex_turn_activity() -> HashMap<String, CodexTurnActivity> {
+    let Some(db_path) = codex_logs_db_path() else {
+        return HashMap::new();
+    };
+
+    let query = "select (ts * 1000 + ts_nanos / 1000000), coalesce(thread_id,''), replace(replace(coalesce(feedback_log_body,''), char(10), ' '), char(31), ' ') from logs where ts >= strftime('%s','now') - 1800 and feedback_log_body like '%session_task.turn%' order by ts desc, ts_nanos desc, id desc limit 4000;";
+    let Ok(output) = Command::new(sqlite3_bin())
+        .args(["-readonly", "-separator", "\u{1f}"])
+        .arg(db_path)
+        .arg(query)
+        .output()
+    else {
+        return HashMap::new();
+    };
+
+    if !output.status.success() {
+        return HashMap::new();
+    }
+
+    codex_turn_activity_from_log_rows(String::from_utf8_lossy(&output.stdout).lines().filter_map(
+        |line| {
+            let mut fields = line.splitn(3, '\u{1f}');
+            let timestamp = fields.next()?.parse().ok()?;
+            let thread_id = fields.next()?.to_string();
+            let body = fields.next()?.to_string();
+
+            Some((timestamp, thread_id, body))
+        },
+    ))
+}
+
+fn codex_thread_name(thread: &CodexThread) -> String {
+    [&thread.preview, &thread.first_user_message, &thread.title]
+        .into_iter()
+        .find_map(|value| clean_prompt_text(value))
+        .unwrap_or_else(|| {
+            if thread.cwd.is_empty() {
+                thread.id.clone()
+            } else {
+                project_name(&thread.cwd)
+            }
+        })
+}
+
+fn codex_tasks() -> Vec<Task> {
+    const CODEX_STALE_AFTER_MS: u64 = 5 * 60 * 1000;
+
+    let now = unix_time_millis();
+    let threads = read_codex_threads();
+
+    read_codex_turn_activity()
+        .into_values()
+        .filter(|activity| {
+            !activity.completed && now.saturating_sub(activity.updated_at) <= CODEX_STALE_AFTER_MS
+        })
+        .filter_map(|activity| {
+            let thread = threads.get(&activity.thread_id);
+            let cwd = activity
+                .cwd
+                .clone()
+                .or_else(|| thread.map(|thread| thread.cwd.clone()))
+                .unwrap_or_default();
+            let name = thread
+                .map(codex_thread_name)
+                .or_else(|| {
+                    if cwd.is_empty() {
+                        None
+                    } else {
+                        Some(project_name(&cwd))
+                    }
+                })
+                .unwrap_or_else(|| activity.thread_id.clone());
+
+            Some(Task {
+                name,
+                pid: 0,
+                status: TaskStatus::Running,
+                start_time: activity.start_time,
+                command: format!("codex turn {}", activity.turn_id),
+                tool: "Codex".to_string(),
+                cwd,
+                session_id: format!("codex:{}:{}", activity.thread_id, activity.turn_id),
+                updated_at: activity
+                    .updated_at
+                    .max(thread.map(|thread| thread.updated_at).unwrap_or(0)),
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -721,6 +975,39 @@ mod tests {
             None
         );
     }
+
+    #[test]
+    fn codex_turn_activity_tracks_running_turn() {
+        let activities = codex_turn_activity_from_log_rows([(
+            42,
+            "thread_a".to_string(),
+            "turn{otel.name=\"session_task.turn\" thread.id=thread_a turn.id=turn_a}:run_sampling_request{turn_id=turn_a cwd=/tmp/project}".to_string(),
+        )]);
+
+        let activity = activities.get("thread_a:turn_a").unwrap();
+        assert_eq!(activity.thread_id, "thread_a");
+        assert_eq!(activity.turn_id, "turn_a");
+        assert_eq!(activity.cwd.as_deref(), Some("/tmp/project"));
+        assert!(!activity.completed);
+    }
+
+    #[test]
+    fn codex_response_completed_marks_turn_done() {
+        let activities = codex_turn_activity_from_log_rows([
+            (
+                42,
+                "thread_a".to_string(),
+                "turn{otel.name=\"session_task.turn\" thread.id=thread_a turn.id=turn_a}:receiving_stream".to_string(),
+            ),
+            (
+                43,
+                "thread_a".to_string(),
+                "turn{otel.name=\"session_task.turn\" thread.id=thread_a turn.id=turn_a}: event.kind=response.completed".to_string(),
+            ),
+        ]);
+
+        assert!(activities.get("thread_a:turn_a").unwrap().completed);
+    }
 }
 
 fn opencode_tasks() -> Vec<Task> {
@@ -784,6 +1071,7 @@ fn opencode_tasks() -> Vec<Task> {
 pub fn get_running_tasks() -> Vec<Task> {
     let mut tasks = claude_tasks(false);
     tasks.extend(opencode_tasks());
+    tasks.extend(codex_tasks());
     tasks.sort_by_key(|task| task.updated_at);
     tasks
 }

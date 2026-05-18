@@ -31,6 +31,7 @@ const TOOL_TONES = [
 const PREFERRED_TOOL_TONE_INDEX: Record<string, number> = {
   OpenCode: 0,
   ClaudeCode: 1,
+  Codex: 2,
 }
 const BASE_WINDOW_SIZE = {
   idle: { width: 392, height: 39 },

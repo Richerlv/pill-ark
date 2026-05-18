@@ -1,6 +1,6 @@
 {
   "name": "pill-ark",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A system tray app for tracking AI agent tasks",
   "scripts": {
     "dev": "tauri dev",

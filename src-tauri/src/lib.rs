@@ -266,6 +266,11 @@ fn open_path(path: &str) -> Result<(), String> {
 #[tauri::command]
 fn open_task_destination(task: core::Task) -> Result<(), String> {
     #[cfg(target_os = "macos")]
+    if task.tool == "Codex" && activate_app_by_name("Codex").is_ok() {
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
     if task.tool == "OpenCode" && activate_opencode_destination(&task).is_ok() {
         return Ok(());
     }
