@@ -19,6 +19,19 @@ type IslandStatus = 'idle' | 'running' | 'success' | 'failed'
 const STARTUP_EMOJIS = ['💊', '⚡️', '✨', '🚀', '🧠', '🛠️', '🌊', '🔥']
 const COMPLETION_DISPLAY_MS = 60_000
 const toolLabel = (tool: string) => (tool === 'ClaudeCode' || tool === 'Claude Code' ? 'ClaudeCode' : tool)
+const TOOL_TONES = [
+  { color: 'rgba(96, 165, 250, 0.86)', bg: 'rgba(96, 165, 250, 0.12)', border: 'rgba(96, 165, 250, 0.22)' },
+  { color: 'rgba(245, 158, 11, 0.86)', bg: 'rgba(245, 158, 11, 0.12)', border: 'rgba(245, 158, 11, 0.22)' },
+  { color: 'rgba(45, 212, 191, 0.82)', bg: 'rgba(45, 212, 191, 0.11)', border: 'rgba(45, 212, 191, 0.2)' },
+  { color: 'rgba(167, 139, 250, 0.82)', bg: 'rgba(167, 139, 250, 0.11)', border: 'rgba(167, 139, 250, 0.2)' },
+  { color: 'rgba(244, 114, 182, 0.8)', bg: 'rgba(244, 114, 182, 0.1)', border: 'rgba(244, 114, 182, 0.18)' },
+  { color: 'rgba(163, 230, 53, 0.76)', bg: 'rgba(163, 230, 53, 0.1)', border: 'rgba(163, 230, 53, 0.18)' },
+]
+
+const PREFERRED_TOOL_TONE_INDEX: Record<string, number> = {
+  OpenCode: 0,
+  ClaudeCode: 1,
+}
 const BASE_WINDOW_SIZE = {
   idle: { width: 392, height: 39 },
   running: { width: 452, height: 39 },
@@ -60,6 +73,38 @@ function App() {
   const previousTasksRef = useRef<Task[]>([])
   const completionTimerRef = useRef<number | null>(null)
   const isShowingCompletionRef = useRef(false)
+  const toolToneByLabel = useMemo(() => {
+    const labels = [...completedTasks, ...tasks].map((task) => toolLabel(task.tool))
+    const uniqueLabels = [...new Set(labels)]
+    const usedToneIndexes = new Set<number>()
+    const toneByLabel = new Map<string, (typeof TOOL_TONES)[number]>()
+
+    uniqueLabels.forEach((label, labelIndex) => {
+      const preferredIndex = PREFERRED_TOOL_TONE_INDEX[label]
+      const availableIndex = TOOL_TONES.findIndex((_, toneIndex) => !usedToneIndexes.has(toneIndex))
+      const toneIndex = preferredIndex !== undefined && !usedToneIndexes.has(preferredIndex)
+        ? preferredIndex
+        : availableIndex >= 0
+          ? availableIndex
+          : labelIndex % TOOL_TONES.length
+
+      usedToneIndexes.add(toneIndex)
+      toneByLabel.set(label, TOOL_TONES[toneIndex])
+    })
+
+    return toneByLabel
+  }, [completedTasks, tasks])
+
+  const toolToneStyle = (tool: string) => {
+    const label = toolLabel(tool)
+    const tone = toolToneByLabel.get(label) ?? TOOL_TONES[PREFERRED_TOOL_TONE_INDEX[label] ?? 0]
+
+    return {
+      '--tool-color': tone.color,
+      '--tool-bg': tone.bg,
+      '--tool-border': tone.border,
+    } as CSSProperties
+  }
 
   const clearCompletionTimer = () => {
     if (completionTimerRef.current) {
@@ -153,6 +198,16 @@ function App() {
     setIsExpanded(!isExpanded)
   }
 
+  const openTask = async (event: React.MouseEvent, task: Task) => {
+    event.stopPropagation()
+
+    try {
+      await invoke('open_task_destination', { task })
+    } catch (e) {
+      console.error('Failed to open task destination:', e)
+    }
+  }
+
   const currentWindowSize = isExpanded
     ? status === 'success'
       ? windowSize.successExpanded
@@ -175,17 +230,17 @@ function App() {
         )}
         {status === 'running' && (
           <div className="island-grid running-state">
-            <span className="status-mark running-mark" />
+            <span className="status-mark status-emoji running-emoji">⏳</span>
             <span className="notch-space" />
-            <span className="count">{tasks.length} agent task{tasks.length > 1 ? 's' : ''} running</span>
+            <span className="count">{tasks.length} Running</span>
           </div>
         )}
         {status === 'success' && (
           <div className="island-grid success-state">
-            <span className="status-mark success-dot" />
+            <span className="status-mark status-emoji success-emoji">✅</span>
             <span className="notch-space" />
             <span className="count">
-              {completedTasks.length} task{completedTasks.length > 1 ? 's' : ''} done
+              {completedTasks.length} Done
               {tasks.length > 0 && ` · ${tasks.length} running`}
             </span>
           </div>
@@ -193,17 +248,17 @@ function App() {
       </div>
 
       {isExpanded && (
-        <div className="task-list">
+        <div className="task-list" onClick={(event) => event.stopPropagation()}>
           {completedTasks.length > 0 && (
             <div className="task-section">
               <div className="section-title">Completed</div>
               {completedTasks.map((task) => (
-                <div key={`done-${task.session_id}`} className="task-item done">
+                <button key={`done-${task.session_id}`} className="task-item done" type="button" onClick={(event) => openTask(event, task)}>
                   <span className="task-name">
-                    <span className="task-tool">[{toolLabel(task.tool)}]</span> {task.name}
+                    <span className="task-tool" style={toolToneStyle(task.tool)}>{toolLabel(task.tool)}</span> {task.name}
                   </span>
                   <span className="task-pid">{task.pid > 0 ? `PID: ${task.pid}` : 'Session task'}</span>
-                </div>
+                </button>
               ))}
             </div>
           )}
@@ -212,12 +267,12 @@ function App() {
             <div className="task-section">
               <div className="section-title">Running</div>
               {tasks.map((task) => (
-                <div key={task.session_id} className="task-item">
+                <button key={task.session_id} className="task-item" type="button" onClick={(event) => openTask(event, task)}>
                   <span className="task-name">
-                    <span className="task-tool">[{toolLabel(task.tool)}]</span> {task.name}
+                    <span className="task-tool" style={toolToneStyle(task.tool)}>{toolLabel(task.tool)}</span> {task.name}
                   </span>
                   <span className="task-pid">{task.pid > 0 ? `PID: ${task.pid}` : 'Session task'}</span>
-                </div>
+                </button>
               ))}
             </div>
           )}
