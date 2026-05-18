@@ -12,7 +12,7 @@ If you often start a Claude Code or opencode task and then move back to your edi
 
 ## Download 📥
 
-[Download PillArk for macOS](https://github.com/Richerlv/pill-ark/releases/latest/download/PillArk_0.1.1_aarch64.dmg)
+[Download PillArk for macOS](https://github.com/Richerlv/pill-ark/releases/download/v0.1.2/PillArk_0.1.2_aarch64.dmg)
 
 The link above downloads the latest DMG installer from GitHub Releases. After downloading, open the DMG and drag `PillArk.app` into `Applications`.
 
@@ -153,7 +153,7 @@ PillArk 是一个 macOS 桌面小工具：它会悬浮在屏幕上方，实时�
 
 ## 下载 📥
 
-[下载 macOS 版 PillArk](https://github.com/Richerlv/pill-ark/releases/latest/download/PillArk_0.1.1_aarch64.dmg)
+[下载 macOS 版 PillArk](https://github.com/Richerlv/pill-ark/releases/download/v0.1.2/PillArk_0.1.2_aarch64.dmg)
 
 上面的链接会从 GitHub Releases 下载最新的 DMG 安装包。下载后打开 DMG，把 `PillArk.app` 拖到 `Applications` 即可安装。
 
