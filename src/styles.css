@@ -26,7 +26,7 @@ body {
   overflow: hidden;
   cursor: pointer;
   user-select: none;
-  width: var(--pill-width, 276px);
+  width: var(--pill-width, 392px);
   height: var(--pill-height, 39px);
   border-radius: 19.5px;
   box-shadow: none;
@@ -54,7 +54,7 @@ body {
 
 .island-grid {
   display: grid;
-  grid-template-columns: minmax(70px, 1fr) 82px minmax(70px, 1fr);
+  grid-template-columns: minmax(96px, 1fr) 160px minmax(96px, 1fr);
   align-items: center;
   width: 100%;
   height: 100%;

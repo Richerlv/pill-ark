@@ -20,11 +20,11 @@ const STARTUP_EMOJIS = ['💊', '⚡️', '✨', '🚀', '🧠', '🛠️', '�
 const COMPLETION_DISPLAY_MS = 60_000
 const toolLabel = (tool: string) => (tool === 'ClaudeCode' || tool === 'Claude Code' ? 'ClaudeCode' : tool)
 const BASE_WINDOW_SIZE = {
-  idle: { width: 276, height: 39 },
-  running: { width: 316, height: 39 },
-  success: { width: 296, height: 39 },
-  expanded: { width: 384, height: 154 },
-  successExpanded: { width: 384, height: 166 },
+  idle: { width: 392, height: 39 },
+  running: { width: 452, height: 39 },
+  success: { width: 432, height: 39 },
+  expanded: { width: 472, height: 154 },
+  successExpanded: { width: 472, height: 166 },
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)

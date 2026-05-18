@@ -7,7 +7,7 @@ use tauri::Manager;
 mod core;
 mod ports;
 
-const INITIAL_WINDOW_WIDTH: f64 = 276.0;
+const INITIAL_WINDOW_WIDTH: f64 = 392.0;
 const INITIAL_WINDOW_HEIGHT: f64 = 39.0;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
